@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UN'Online</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            --glass-bg: rgba(20, 20, 35, 0.85);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+            --card-shadow: 0 8px 20px rgba(0,0,0,0.6);
+            --c-red: #ff4757; --c-blue: #1e90ff; --c-green: #2ed573; --c-yellow: #ffa502; --c-black: #2f3542;
+            --accent: #a29bfe;
+        }
+
+        * { box-sizing: border-box; }
+        body { font-family: 'Poppins', sans-serif; background: var(--bg-gradient); color: white; margin: 0; padding: 0; min-height: 100vh; overflow-x: hidden; }
+        
+        .hidden { display: none !important; }
+        
+        #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: rgba(30, 30, 60, 0.95); color: white; padding: 12px 30px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.1); pointer-events: auto; animation: slideDown 0.4s; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .toast.error { border-left: 5px solid #ff4757; } .toast.info { border-left: 5px solid #1e90ff; } .toast.success { border-left: 5px solid #1dd1a1; }
+        @keyframes slideDown { from { transform:translate(-50%, -50px); opacity:0; } to { transform:translate(-50%, 0); opacity:1; } }
+
+        .screen-container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 20px; min-height: 100vh; display: flex; flex-direction: column; }
+        .auth-box { background: var(--glass-bg); padding: 40px; border-radius: 20px; border: var(--glass-border); text-align: center; width: 100%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        
+        .lobby-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 15px 30px; border-radius: 15px; margin-bottom: 30px; border: var(--glass-border); }
+        
+        .dashboard-grid { 
+            display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 25px; 
+            grid-template-areas: "amis jouer classement" "amis public classement";
+        }
+        #col-amis { grid-area: amis; } #col-jouer { grid-area: jouer; } #col-classement { grid-area: classement; } #col-public { grid-area: public; }
+        
+        .panel { background: var(--glass-bg); border-radius: 20px; padding: 25px; border: var(--glass-border); display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        .lobby-col h3 { margin-top: 0; color: var(--accent); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; margin-bottom: 20px; font-size: 1.1em; }
+
+        .play-panel { text-align: center; background: linear-gradient(180deg, rgba(40,40,70,0.6), rgba(20,20,35,0.6)); border-radius: 20px; padding: 30px; border: 1px solid var(--accent); box-shadow: 0 0 30px rgba(162, 155, 254, 0.1); }
+        
+        .public-rooms-list { max-height: 200px; overflow-y: auto; margin-top: 10px; }
+        .room-item { background: rgba(255,255,255,0.05); padding: 10px; margin-bottom: 5px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; transition: 0.2s; cursor: pointer; }
+        .room-item:hover { background: rgba(255,255,255,0.1); }
+        .room-status.active { color: var(--c-green); } .room-status.waiting { color: var(--c-yellow); }
+
+
+        #game-board { position: relative; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        .game-top-bar { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; z-index: 100; }
+        .room-info { background: rgba(0,0,0,0.6); backdrop-filter: blur(5px); padding: 10px 25px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 20px; }
+        .opponents-area { display: flex; justify-content: center; gap: 30px; margin-top: 80px; flex-wrap: wrap; z-index: 10; }
+        .board-area { flex: 1; display: flex; justify-content: center; align-items: center; gap: 60px; perspective: 1000px; }
+        .player-hand-container { position: fixed; bottom: -20px; left: 50%; transform: translateX(-50%); display: flex; justify-content: center; width: 100%; max-width: 800px; height: 180px; z-index: 50; padding-bottom: 20px; }
+        
+        input { padding: 12px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white; width: 100%; margin-bottom: 10px; outline: none; transition: 0.3s; }
+        input:focus { border-color: var(--accent); background: rgba(0,0,0,0.5); }
+        button { padding: 10px 20px; border-radius: 10px; border: none; cursor: pointer; font-weight: 700; text-transform: uppercase; color: white; transition: 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .btn-primary { background: linear-gradient(45deg, #6c5ce7, #a29bfe); } 
+        .btn-success { background: linear-gradient(45deg, #058922, #73e164);} 
+        .btn-danger { background: linear-gradient(45deg, #d63031, #ff7675); } 
+        .btn-warn { background: linear-gradient(45deg, #fdcb6e, #ffeaa7); color: #2d3436; } 
+        .btn-purple { background: linear-gradient(45deg, #e056fd, #be2edd); }
+
+        .card { width: 100px; height: 150px; border-radius: 12px; display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: 800; font-size: 36px; user-select: none; cursor: pointer; box-shadow: -5px 5px 10px rgba(0,0,0,0.3); position: relative; border: 3px solid white; background: #333; transition: transform 0.2s; }
+        .hand-card { margin-left: -40px; transform-origin: bottom center; transition: 0.3s; }
+        .hand-card:first-child { margin-left: 0; }
+        .hand-card:hover { transform: translateY(-40px) scale(1.1) rotate(0deg) !important; z-index: 100; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+        .card::before, .card::after { content: attr(data-val); position: absolute; font-size: 14px; font-weight: bold; color: white; }
+        .card::before { top: 5px; left: 8px; } .card::after { bottom: 5px; right: 8px; transform: rotate(180deg); }
+        .card-inner { background: white; width: 70%; height: 60%; border-radius: 50%; transform: rotate(-45deg); display: flex; justify-content: center; align-items: center; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        .card-symbol { transform: rotate(45deg); text-shadow: 2px 2px 0px rgba(0,0,0,0.1); }
+        .card.Rouge { background: var(--c-red); color: var(--c-red); } .card.Bleu { background: var(--c-blue); color: var(--c-blue); } .card.Vert { background: var(--c-green); color: var(--c-green); } .card.Jaune { background: var(--c-yellow); color: #e1b12c; } .card.Noir { background: var(--c-black); color: black; border-color: var(--accent); } .card.Noir .card-inner { background: linear-gradient(to bottom, #fff, #dfe6e9); }
+        
+        .player-badge { background: rgba(30, 30, 50, 0.8); padding: 15px 25px; border-radius: 15px; min-width: 140px; text-align: center; position: relative; transition: 0.3s; border: 2px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); }
+        .player-badge.active-turn { border-color: #ffeaa7; background: rgba(50, 50, 80, 0.9); transform: scale(1.1); box-shadow: 0 0 20px rgba(255, 234, 167, 0.3); z-index: 5; }
+        .uno-flag { position: absolute; top: -10px; right: -10px; background: #ff4d4d; padding: 3px 8px; border-radius: 8px; font-size: 0.7em; font-weight: bold; animation: bounce 1s infinite; }
+        
+        .action-dock { position: fixed; bottom: 40px; right: 40px; display: flex; flex-direction: column; gap: 15px; z-index: 90; }
+        .action-btn-circle { width: 70px; height: 70px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 11px; border: 3px solid rgba(255,255,255,0.2); box-shadow: 0 10px 20px rgba(0,0,0,0.4); backdrop-filter: blur(5px); }
+        
+        #challenge-btn { animation: pulse 1s infinite; background: var(--c-red); }
+        @keyframes pulse { 0% {transform:scale(1)} 50% {transform:scale(1.1)} 100% {transform:scale(1)} }
+        
+
+        #setup-modal, #victory-modal, #color-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 200; display: flex; justify-content: center; align-items: center; }
+        .setup-content, .victory-content { background: #2d3436; padding: 40px; border-radius: 20px; width: 100%; max-width: 500px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .color-pick { width: 80px; height: 80px; border-radius: 50%; margin: 10px; cursor: pointer; border: 3px solid white; transition: 0.2s; }
+        .color-pick:hover { transform: scale(1.2); }
+
+
+        #admin-panel { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 500; padding: 40px; overflow-y: auto; }
+        .admin-section { background: rgba(255,255,255,0.05); padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .admin-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .admin-table th, .admin-table td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left; }
+        .admin-table th { color: var(--accent); }
+        
+        @media (max-width: 900px) { .dashboard-grid { grid-template-columns: 1fr; grid-template-areas: "jouer" "public" "amis" "classement"; } }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+
+    <div id="admin-panel" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h1>ADMIN</h1>
+            <button class="btn-danger" onclick="toggleAdminPanel(false)">FERMER</button>
+        </div>
+        
+        <div class="admin-section">
+            <h3>Salles en cours</h3>
+            <button class="btn-primary" onclick="loadAdminData()">Actualiser</button>
+            <table class="admin-table">
+                <thead><tr><th>Nom Salle</th><th>Joueurs</th><th>État</th><th>Action</th></tr></thead>
+                <tbody id="admin-games-body"></tbody>
+            </table>
+        </div>
+
+        <div class="admin-section">
+            <h3>Utilisateurs</h3>
+            <table class="admin-table">
+                <thead><tr><th>ID</th><th>Pseudo</th><th>ELO</th><th>Admin</th><th>Action</th></tr></thead>
+                <tbody id="admin-users-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="auth-screen" class="screen-container" style="justify-content: center; align-items: center;">
+        <h1 style="font-size: 4em; margin-bottom: 10px; color: var(--accent);">UN'ONLINE</h1>
+        <div class="auth-box">
+            <h2 id="auth-title">Connexion</h2>
+            <div id="login-form">
+                <input type="text" id="login-user" placeholder="Votre Pseudo">
+                <input type="password" id="login-pass" placeholder="Mot de passe">
+                <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="login()">Se Connecter</button>
+                <p style="margin-top:20px; font-size:0.9em; color:#aaa; cursor:pointer;" onclick="toggleAuth(true)">Créer un compte</p>
+            </div>
+            <div id="reg-form" class="hidden">
+                <input type="text" id="reg-user" placeholder="Nouveau Pseudo">
+                <input type="password" id="reg-pass" placeholder="Nouveau Mot de passe">
+                <button class="btn-success" style="width:100%; margin-top:10px;" onclick="register()">Créer Compte</button>
+                <p style="margin-top:20px; font-size:0.9em; color:#aaa; cursor:pointer;" onclick="toggleAuth(false)">Se connecter</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="lobby-screen" class="hidden container">
+        <div class="lobby-header">
+            <div><h2 id="welcome-msg" style="margin:2px;"> Coucou le boss <span id="user-name-span" style="color: #ffffff;"></span> </h2></div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-danger" style="font-size:0.8em; padding:8px 15px; background: #c0392b;" onclick="deleteAccount()">Supprimer</button>
+                <button class="btn-danger" style="font-size:0.8em; padding:8px 15px;" onclick="logout()">Déconnexion</button>
+                <button id="btn-admin-access" class="btn-purple hidden" style="font-size:0.8em; padding:8px 15px;" onclick="toggleAdminPanel(true)">ADMIN</button>
+            </div>
+        </div>
+        <div class="dashboard-grid">
+            <div class="lobby-col" id="col-amis">
+                <div class="panel"><h3>Amis</h3><div style="display:flex; gap:5px;"><input type="text" id="friend-input" placeholder="Pseudo"><button class="btn-success" onclick="addFriend()">+</button></div><ul id="friends-list" style="list-style:none; padding:0;"></ul></div>
+            </div>
+            
+            <div class="lobby-col" id="col-jouer">
+                <div class="play-panel">
+                    <h1 style="font-size: 3em; margin:0 0 20px 0;"> JOUER</h1>
+                    <input type="text" id="room-input" placeholder="Nom de la salle" style="text-align:center;">
+                    <input type="password" id="room-pass" placeholder="Mot de passe (Optionnel)" style="text-align:center;">
+                    <button class="btn-success" onclick="rejoindreSalle()" style="width:100%;">CRÉER / REJOINDRE</button>
+                </div>
+            </div>
+
+            <div class="lobby-col" id="col-public">
+                <div class="panel">
+                    <h3> Salles Publiques</h3>
+                    <button class="btn-purple" onclick="refreshPublicRooms()" style="font-size:0.8em; width:100%; margin-bottom:10px;">Actualiser</button>
+                    <div id="public-rooms-list" class="public-rooms-list"></div>
+                </div>
+            </div>
+
+            <div class="lobby-col" id="col-classement">
+                <div class="panel"><h3>Classement</h3><table style="width:100%; border-collapse:collapse;"><tbody id="leaderboard-body"></tbody></table></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="waiting-room" class="hidden">
+        <div class="glass-panel" style="width: 800px; text-align: center; margin:auto; background:var(--glass-bg); padding:40px; border-radius:20px;">
+            <h1 id="room-title" style="color: var(--accent);">Salle d'Attente</h1>
+            <p id="waiting-status" style="color:#aaa;">En attente de joueurs...</p>
+            <div class="players-grid" id="waiting-players" style="display:flex; justify-content:center; gap:20px; margin:30px 0;"></div>
+            
+            <div id="lobby-settings">
+                <div class="rules-container" style="text-align:left; max-width:500px; margin: 20px auto; background:rgba(255,255,255,0.05); padding:20px; border-radius:15px;">
+                    <h3 style="border-bottom:1px solid #555; padding-bottom:5px;">Règles</h3>
+                    <label style=" display:flex; justify-content:space-between; padding:15px;"><span>★ Empiler les +2</span><input type="checkbox" id="rule-stack2"></label>
+                    <label style="display:flex; justify-content:space-between; padding:15px;"><span>★ Empiler les +4</span><input type="checkbox" id="rule-stack4"></label>
+                    <label style="display:flex; justify-content:space-between; padding:15px;"><span>★ Interception</span><input type="checkbox" id="rule-jump"></label>
+                </div>
+                <div id="lobby-controls" style="margin-top:20px; display:flex; justify-content:center; gap:20px;">
+                    <div style="border-left:1px solid #555; padding-left:20px; display:flex; gap:10px;">
+                        <button class="btn-purple" onclick="addBot()">+ Bot</button>
+                        <button class="btn-warn" onclick="removeBot()">- Bot</button>
+                    </div> 
+                    <button class="btn-success" onclick="demarrer()" style="padding: 12px 40px; font-size:1.1em;">LANCER</button>
+                </div>
+            </div>
+            
+            <div style="margin-top:20px;">
+                <button class="btn-danger" onclick="quitterSalle()">Quitter</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-board" class="hidden">
+        <div class="game-top-bar">
+            <div class="room-info"><h3 id="game-room-name" style="margin:0; color:white;">Salle</h3><span style="margin:0 15px;">|</span><span id="game-status" style="color:#feca57;">...</span></div>
+            <button class="btn-danger" onclick="quitterSalle()">Quitter</button>
+        </div>
+        <div id="opponents" class="opponents-area"></div>
+        <div class="board-area">
+            <div class="card deck" onclick="piocher()" data-val="PIOCHE" style="background: repeating-linear-gradient(45deg, #2c3e50, #2c3e50 10px, #34495e 10px, #34495e 20px); border-color:#555;"><div class="card-inner" style="background:transparent;"><div class="card-symbol" style="font-size:14px; color:rgba(255,255,255,0.5);">PIOCHE</div></div></div>
+            <div id="talon-container"></div>
+        </div>
+        <div id="my-hand" class="player-hand-container"></div>
+        <div class="action-dock">
+            <button id="challenge-btn" class="action-btn-circle btn-danger" style="display:none; width:80px; height:80px; animation: pulse 1s infinite;" onclick="contesterPlus4()"><span style="font-size:20px;">🤥</span>MENTEUR?</button>
+            <button class="action-btn-circle btn-success onclick="annoncerUno()"><span style="font-size:14px; font-weight:800;">UNO!</span>(U)</button>
+            <button class="action-btn-circle btn-danger" onclick="contreUno()"><span style="font-size:14px; font-weight:800;">CONTRE</span>(C)</button>
+        </div>
+    </div>
+
+    <div id="victory-modal" class="hidden"><div class="victory-content"><h1 style="color:var(--c-yellow);"> VICTOIRE !</h1><p id="victory-msg-text" style="font-size:1.5em; color:white;"></p><button class="btn-success" onclick="closeVictoryModal()">REJOUER</button></div></div>
+    <div id="color-modal" class="hidden"><div class="glass-panel" style="display:flex; gap:20px;"><div class="color-pick" style="background:var(--c-red)" onclick="choisirCouleur('Rouge')"></div><div class="color-pick" style="background:var(--c-blue)" onclick="choisirCouleur('Bleu')"></div><div class="color-pick" style="background:var(--c-green)" onclick="choisirCouleur('Vert')"></div><div class="color-pick" style="background:var(--c-yellow)" onclick="choisirCouleur('Jaune')"></div></div></div>
+
+    <script>
+        const socket = io({ autoConnect: false });
+        let currentUser = null; let currentRoom = null; let carteEnAttente = null;
+
+        function showToast(msg, type='info') { const t=document.createElement('div'); t.className=`toast ${type}`; t.innerHTML=`<span>${type==='success'?'✅':type==='error'?'⚠️':'ℹ️'}</span> ${msg}`; document.getElementById('toast-container').appendChild(t); setTimeout(()=>t.remove(), 3000); }
+        function getSymbol(v) { const m={'Inversion':'⇄','Passer':'Ø','+2':'+2','+4':'+4','Joker':'★'}; return m[v] || v; }
+        function renderCard(c, v, clk) { const sym=getSymbol(v); return `<div class="card ${c} ${clk?'hand-card':''}" ${clk?`onclick="${clk}"`:''} data-val="${sym}"><div class="card-inner"><div class="card-symbol">${sym}</div></div></div>`; }
+        function toggleAuth(reg) { document.getElementById('login-form').classList.toggle('hidden', reg); document.getElementById('reg-form').classList.toggle('hidden', !reg); }
+        function showScreen(id) { ['auth-screen','lobby-screen','waiting-room','game-board'].forEach(s=>document.getElementById(s).classList.add('hidden')); document.getElementById(id).classList.remove('hidden'); }
+        function closeVictoryModal() { document.getElementById('victory-modal').classList.add('hidden'); showScreen('waiting-room'); }
+
+        window.onload = async () => { 
+            if(window.location.protocol==='file:') return; 
+            try { const res=await fetch('/api/me'); if(res.ok){ const d=await res.json(); if(d.authenticated) onLoginSuccess(d.user); }} catch(e){}
+            setInterval(refreshPublicRooms, 5000); 
+        };
+
+        async function register() { 
+            const u=document.getElementById('reg-user').value, p=document.getElementById('reg-pass').value; 
+            if(!u || !p) return showToast("Champs requis", "error");
+
+            try {
+                const res = await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}); 
+                const d = await res.json();
+                
+                if(d.success) { 
+                    showToast('Succès ! Connexion auto...', 'success'); 
+                    const resLog = await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+                    const dLog = await resLog.json();
+                    if(dLog.success) onLoginSuccess(dLog.user);
+                    else { toggleAuth(false); showToast("Veuillez vous connecter", "info"); }
+                }
+                else {
+                    showToast(d.message, 'error');
+                }
+            } catch(e) { 
+                showToast("Erreur serveur (Base de données ?)", 'error'); 
+            }
+        }
+        async function login() { const u=document.getElementById('login-user').value, p=document.getElementById('login-pass').value; const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}); const d=await r.json(); if(d.success) onLoginSuccess(d.user); else showToast(d.message,'error'); }
+        async function logout() { await fetch('/api/logout',{method:'POST'}); location.reload(); }
+        async function deleteAccount() { if(confirm('Sûr ?')) { await fetch('/api/delete_account',{method:'DELETE'}); location.reload(); } }
+        async function addFriend() { const u=document.getElementById('friend-input').value; if(!u)return; const res=await fetch('/api/friends/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u})}); const d=await res.json(); showToast(d.message, d.success?'success':'error'); updateSocial(); }
+        
+        async function updateSocial() { 
+            const l=await(await fetch('/api/leaderboard')).json(); document.getElementById('leaderboard-body').innerHTML=l.map((u,i)=>`<tr><td style="color:var(--c-white)">#${i+1}</td><td>${u.username}</td><td style="text-align:right">${u.elo}</td></tr>`).join('');
+            const f=await(await fetch('/api/friends')).json(); document.getElementById('friends-list').innerHTML=f.map(x=>`<li style="background:rgba(255,255,255,0.05); padding:5px; margin-bottom:5px; border-radius:5px;">  ${x.username}</li>`).join('');
+        }
+        function onLoginSuccess(u) { 
+            currentUser=u; document.getElementById('auth-screen').classList.add('hidden'); document.getElementById('lobby-screen').classList.remove('hidden'); document.getElementById('user-name-span').innerText = u.username;
+            if(u.is_admin) document.getElementById('btn-admin-access').classList.remove('hidden');
+            updateSocial(); refreshPublicRooms(); socket.connect(); showScreen('lobby-screen'); 
+        }
+
+        async function refreshPublicRooms() {
+            if(!currentUser) return;
+            const rooms = await(await fetch('/api/rooms')).json();
+            const list = document.getElementById('public-rooms-list');
+            if(rooms.length === 0) list.innerHTML = "<div style='color:#aaa; font-style:italic;'>Aucune salle publique</div>";
+            else list.innerHTML = rooms.map(r => `
+                <div class="room-item" onclick="joinPublic('${r.name}')">
+                    <span style="font-weight:bold;">${r.name}</span>
+                    <span class="room-status ${r.status==='En jeu'?'waiting':'active'}">${r.status} (${r.count}/10)</span>
+                </div>
+            `).join('');
+        }
+        function joinPublic(name) { document.getElementById('room-input').value = name; rejoindreSalle(); }
+
+        function toggleAdminPanel(show) { document.getElementById('admin-panel').classList.toggle('hidden', !show); if(show) loadAdminData(); }
+        async function loadAdminData() {
+            try {
+                const resG = await fetch('/api/admin/games');
+                if(resG.ok) {
+                    const games = await resG.json();
+                    const tbody = document.getElementById('admin-games-body');
+                    if(games.length === 0) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#aaa; padding:15px;">Aucune salle active</td></tr>';
+                    else tbody.innerHTML = games.map(g => `<tr><td>${g.room}</td><td>${g.players.join(', ')}</td><td>${g.started?'En cours':'Attente'}</td><td><button class="btn-danger" style="font-size:0.7em" onclick="deleteRoom('${g.room}')">Fermer</button></td></tr>`).join('');
+                } else {
+                    if(resG.status === 403) showToast("Accès refusé : Vous n'êtes pas Admin.", "error");
+                }
+
+                const resU = await fetch('/api/admin/users');
+                if(resU.ok) {
+                    const users = await resU.json();
+                    const tbody = document.getElementById('admin-users-body');
+                    if(users.length === 0) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#aaa; padding:15px;">Aucun utilisateur</td></tr>';
+                    else tbody.innerHTML = users.map(u => `<tr><td>${u.id}</td><td>${u.username}</td><td>${u.elo}</td><td>${u.is_admin?'Oui':''}</td><td><button class="btn-danger" style="font-size:0.7em" onclick="deleteUser(${u.id})">Bannir</button></td></tr>`).join('');
+                }
+            } catch(e) { 
+                console.error("Erreur Admin:", e);
+                showToast("Erreur de connexion au panneau admin", "error");
+            }
+        }
+
+        async function deleteRoom(id) { if(confirm('Fermer la salle '+id+' ?')) { await fetch(`/api/admin/rooms/${id}`, {method:'DELETE'}); loadAdminData(); } }
+        async function deleteUser(id) { if(confirm('Bannir l\'utilisateur '+id+' ?')) { await fetch(`/api/admin/users/${id}`, {method:'DELETE'}); loadAdminData(); } }
+
+        function rejoindreSalle() { 
+            const r=document.getElementById('room-input').value; 
+            const p=document.getElementById('room-pass').value; 
+            if(!r) return showToast('Nom requis','error'); 
+            currentRoom=r; socket.emit('rejoindre',{room:r, password:p}); 
+        }
+        function quitterSalle() { location.reload(); }
+        
+        socket.on('info', d => { 
+            if(d.message.includes('Bienvenue')) { 
+                showScreen('waiting-room'); 
+                document.getElementById('room-title').innerText = "Salle : " + currentRoom;
+                document.getElementById('game-room-name').innerText = currentRoom;
+            } else showToast(d.message,'info');
+        });
+        socket.on('erreur', d => showToast(d.message,'error'));
+
+        function demarrer() { socket.emit('demarrer', {regles:{stack_plus2:document.getElementById('rule-stack2').checked, stack_plus4:document.getElementById('rule-stack4').checked, jump_in:document.getElementById('rule-jump').checked}}); }
+        function addBot() { socket.emit('add_bot'); }
+        function removeBot() { socket.emit('remove_bot'); }
+        function piocher() { socket.emit('piocher'); }
+        function annoncerUno() { socket.emit('annoncer_uno'); }
+        function contreUno() { socket.emit('contre_uno'); }
+        function contesterPlus4() { socket.emit('contester_plus4'); }
+        function preparerCoup(i,c) { if(c==='Noir') { carteEnAttente=i; document.getElementById('color-modal').classList.remove('hidden'); } else socket.emit('jouer_carte', {index:i,couleur:null}); }
+        function choisirCouleur(c) { document.getElementById('color-modal').classList.add('hidden'); socket.emit('jouer_carte', {index:carteEnAttente,couleur:c}); }
+
+        //Etat du jeu
+        socket.on('etat_jeu', e => {
+            if (!e.en_cours) {
+                const allPlayers = [...e.joueurs, ...e.spectateurs];
+                document.getElementById('waiting-players').innerHTML = allPlayers.map(j => `
+                    <div class="player-slot occupied ${j.est_bot?'is-bot':''}">
+                        <div>${j.est_bot?'🤖':'👤'}</div>
+                        <div style="font-size:0.5em; margin-top:5px;">${j.nom}</div>
+                    </div>
+                `).join('');
+                
+                
+                const myPlayer = currentUser ? e.joueurs.find(j => j.nom === currentUser.username) : null;
+                const settings = document.getElementById('lobby-settings');
+                
+                
+                settings.style.display = 'block';
+
+                if(!document.getElementById('game-board').classList.contains('hidden')) { 
+                    document.getElementById('victory-msg-text').innerText = e.message; 
+                    document.getElementById('victory-modal').classList.remove('hidden'); 
+                    updateSocial(); 
+                    return; 
+                }
+                
+                document.getElementById('waiting-status').innerText = "En attente de lancement...";
+                showScreen('waiting-room'); 
+                return;
+            }
+
+            const amIPlaying = e.joueurs.some(j => j.sid === socket.id); 
+            const myPlayer = currentUser ? e.joueurs.find(j => j.nom === currentUser.username) : null;
+            
+            if(!myPlayer) {
+                
+                showScreen('game-board');
+                
+                document.querySelector('.action-dock').style.display = 'none';
+                document.getElementById('my-hand').innerHTML = '<div style="color:rgba(255,255,255,0.5); font-style:italic; padding:20px;">Mode Spectateur</div>';
+                document.getElementById('game-status').innerText = e.message + " (Spectateur)";
+                
+                document.getElementById('opponents').innerHTML = e.joueurs.map((j,i) => `
+                    <div class="player-badge ${i===e.tour_index?'active-turn':''} ${j.est_bot?'bot':''}">
+                        <strong>${j.nom}</strong>
+                        <div style="font-size:0.8em; opacity:0.8">${j.nb_cartes} cartes</div>
+                        ${j.a_dit_uno ? '<div class="uno-tag">UNO!</div>' : ''}
+                    </div>
+                `).join('');
+                
+                const t = document.getElementById('talon-container');
+                if(e.talon) {
+                    let ind = '';
+                    if(e.talon.couleur==='Noir' && e.couleur_active) { const cls={'Rouge':'var(--c-red)','Bleu':'var(--c-blue)','Vert':'var(--c-green)','Jaune':'var(--c-yellow)'}; ind=`<div class="active-color-indicator" style="background:${cls[e.couleur_active]}; width:20px; height:20px; border-radius:50%; position:absolute; top:5px; right:5px; border:2px solid white; box-shadow:0 0 10px white;"></div>`; }
+                    t.innerHTML = `<div class="card ${e.talon.couleur}" data-val="${getSymbol(e.talon.valeur)}">${ind}<div class="card-inner"><div class="card-symbol">${getSymbol(e.talon.valeur)}</div></div></div>`;
+                } else t.innerHTML='';
+                return;
+            }
+
+        
+            document.querySelector('.action-dock').style.display = 'flex';
+            showScreen('game-board'); 
+            document.getElementById('game-status').innerText = e.message;
+            document.getElementById('opponents').innerHTML = e.joueurs.map((j,i) => `<div class="player-badge ${i===e.tour_index?'active-turn':''} ${j.est_bot?'bot':''}"><strong>${j.nom}</strong><div style="font-size:0.8em; opacity:0.8">${j.nb_cartes} cartes</div>${j.a_dit_uno ? '<div class="uno-tag">UNO!</div>' : ''}</div>`).join('');
+            
+            const t = document.getElementById('talon-container');
+            if(e.talon) {
+                let ind = '';
+                if(e.talon.couleur==='Noir' && e.couleur_active) { const cls={'Rouge':'var(--c-red)','Bleu':'var(--c-blue)','Vert':'var(--c-green)','Jaune':'var(--c-yellow)'}; ind=`<div class="active-color-indicator" style="background:${cls[e.couleur_active]}; width:20px; height:20px; border-radius:50%; position:absolute; top:5px; right:5px; border:2px solid white; box-shadow:0 0 10px white;"></div>`; }
+                t.innerHTML = `<div class="card ${e.talon.couleur}" data-val="${getSymbol(e.talon.valeur)}">${ind}<div class="card-inner"><div class="card-symbol">${getSymbol(e.talon.valeur)}</div></div></div>`;
+            } else t.innerHTML='';
+
+            const myIdx = e.joueurs.findIndex(j => j.nom === currentUser.username);
+            const btnChal = document.getElementById('challenge-btn');
+            if(e.attente_challenge && e.tour_index === myIdx) btnChal.style.display='flex'; else btnChal.style.display='none';
+        });
+
+        socket.on('ma_main', d => {
+            const m = document.getElementById('my-hand');
+            m.innerHTML = d.cartes.map((c,i) => renderCard(c.couleur, c.valeur, `preparerCoup(${i},'${c.couleur}')`)).join('');
+            Array.from(m.children).forEach((card, i) => { const angle = -((m.children.length-1)*6)/2 + (i*6); card.style.transform = `rotate(${angle}deg) translateY(${Math.abs(angle)*1.5}px)`; });
+        });
+
+        document.addEventListener('keydown', e => { if(document.activeElement.tagName==='INPUT') return; if(e.key.toLowerCase()==='u') annoncerUno(); if(e.key.toLowerCase()==='c') contreUno(); });
+    </script>
+</body>
+</html>
