@@ -5,7 +5,7 @@ optional house rules, an ELO leaderboard and friends, all synchronised in real t
 
 ![In-game screenshot](docs/game.jpg)
 
-> Team project for the software development course (TDLOG) at École des Ponts ParisTech, 2025-2026,
+> Team project for the software development course (TDLOG) at École des Ponts, 2025-2026,
 > by Flavie Hy, Matteo Guibert and Erwann Cognet. The interface and the code identifiers are in French.
 
 ## Features
